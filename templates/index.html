@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task List App</title>
+    <!-- Quill.js and Sortable.js from CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Task List</h1>
+            <button id="addTaskBtn">+ Add Task</button>
+        </header>
+        <main>
+            <div id="taskForm" style="display: none;">
+                <input type="text" id="taskTitle" placeholder="Task Title">
+                <input type="date" id="taskDueDate" placeholder="Due Date">
+                <div id="editor-container"></div>
+                <button id="saveTaskBtn">Save Task</button>
+            </div>
+            <div id="taskList"></div>
+        </main>
+    </div>
+
+    <!-- Quill JS and Sortable.js from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.14.0/Sortable.min.js"></script>
+    <script src="{{ url_for('static', filename='js/scripts.js') }}"></script>
+</body>
+</html>

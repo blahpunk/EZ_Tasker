@@ -1,0 +1,147 @@
+body {
+    background-color: #1c1c1e;
+    color: #f2f2f7;
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    max-width: 800px;
+    margin: auto;
+    padding: 20px;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 24px;
+}
+
+#addTaskBtn {
+    background-color: #0a84ff;
+    color: #fff;
+    border: none;
+    padding: 10px 20px;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background-color 0.3s ease;
+}
+
+#addTaskBtn:hover {
+    background-color: #0066cc;
+}
+
+#taskList {
+    margin-top: 20px;
+}
+
+#taskForm {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background-color: #2c2c2e;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+#taskTitle, #taskDueDate, #saveTaskBtn {
+    padding: 10px;
+    border-radius: 5px;
+    border: 1px solid #555;
+    background-color: #3c3c3e;
+    color: #f2f2f7;
+}
+
+#taskTitle, #taskDueDate {
+    margin-bottom: 10px;
+}
+
+#saveTaskBtn {
+    background-color: #0a84ff;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+#saveTaskBtn:hover {
+    background-color: #0066cc;
+}
+
+.task-item {
+    background-color: #2c2c2e;
+    margin-bottom: 10px;
+    padding: 15px;
+    border-radius: 5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    cursor: grab;
+}
+
+.task-item h2 {
+    margin: 0;
+    font-size: 18px;
+    flex-grow: 1; /* Make title grow to fill available space */
+}
+
+.task-item p {
+    margin: 10px 0 5px; /* Added top margin to create gap between title and description */
+    padding-left: 15px; /* Added padding to the left */
+    color: #a1a1a6;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+    text-align: left; /* Ensure the description is aligned to the left */
+    width: 100%; /* Take up the full width of the task item */
+}
+
+.task-item .task-meta {
+    font-size: 12px;
+    color: #a1a1a6;
+    display: flex;
+    gap: 10px;
+}
+
+.task-item .actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+    margin-left: 15px;
+}
+
+.task-item .actions button {
+    background-color: #0a84ff;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    padding: 5px 10px;
+    border-radius: 5px;
+    transition: background-color 0.3s ease;
+    width: 60px;
+    text-align: center;
+}
+
+.task-item .actions button:hover {
+    background-color: #0066cc;
+}
+
+.task-desc.collapsed {
+    max-height: 50px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.task-desc.expanded {
+    max-height: none;
+    white-space: normal;
+}
