@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     let currentEditingTask = null;
+    let tasks = [];
 
     // Initialize Sortable.js for drag-and-drop functionality
     new Sortable(taskList, {
@@ -40,27 +41,18 @@ document.addEventListener('DOMContentLoaded', function () {
         const taskTitle = taskTitleInput.value.trim();
         const taskDescription = editor.root.innerHTML.trim();
         const taskDueDate = taskDueDateInput.value ? new Date(taskDueDateInput.value).toLocaleDateString() : '';
+        const timestamp = new Date().toLocaleString();
 
         if (taskTitle && taskDescription) {
-            const timestamp = new Date().toLocaleString();
-            const task = { title: taskTitle, description: taskDescription, dueDate: taskDueDate, timestamp };
-
             if (currentEditingTask) {
-                await fetch(`/tasks/${currentEditingTask.id}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(task)
-                });
+                // Update existing task
+                tasks[currentEditingTask.index] = { ...tasks[currentEditingTask.index], title: taskTitle, description: taskDescription, dueDate: taskDueDate, timestamp: timestamp };
+                await updateTask(currentEditingTask.index, tasks[currentEditingTask.index]);
             } else {
-                await fetch('/tasks', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(task)
-                });
+                // Add new task at the top
+                const newTask = { title: taskTitle, description: taskDescription, dueDate: taskDueDate, timestamp: timestamp };
+                tasks.unshift(newTask);
+                await addTask(newTask);
             }
             resetForm();
             loadTasks();
@@ -115,9 +107,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         deleteBtn.addEventListener('click', async () => {
-            await fetch(`/tasks/${index}`, {
-                method: 'DELETE'
-            });
+            await deleteTask(index);
             loadTasks();
         });
 
@@ -133,28 +123,57 @@ document.addEventListener('DOMContentLoaded', function () {
         taskDueDateInput.value = task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '';
         editor.root.innerHTML = task.description;
         taskForm.style.display = 'block';
-        currentEditingTask = { id: index, ...task };
+        currentEditingTask = { index: index };
     }
 
     async function loadTasks() {
         taskList.innerHTML = ''; // Clear the task list
         const response = await fetch('/tasks');
-        const tasks = await response.json();
-        tasks.forEach(addTaskToUI);
+        tasks = await response.json();
+        tasks.forEach((task, index) => addTaskToUI(task, index));
     }
 
     async function saveTaskOrder() {
         const orderedTasks = [];
-        taskList.querySelectorAll('.task-item').forEach(taskItem => {
+        taskList.querySelectorAll('.task-item').forEach((taskItem, newIndex) => {
             const id = taskItem.getAttribute('data-id');
+            tasks[id].index = newIndex;
             orderedTasks.push(tasks[id]);
         });
+        tasks = orderedTasks;
         await fetch('/tasks/order', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(orderedTasks)
+        });
+    }
+
+    async function addTask(task) {
+        await fetch('/tasks', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(task)
+        });
+    }
+
+    async function updateTask(index, task) {
+        await fetch(`/tasks/${index}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(task)
+        });
+    }
+
+    async function deleteTask(index) {
+        tasks.splice(index, 1);
+        await fetch(`/tasks/${index}`, {
+            method: 'DELETE'
         });
     }
 
