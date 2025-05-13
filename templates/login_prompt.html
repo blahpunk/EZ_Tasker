@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Login Required</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1c1c1e; color: #f2f2f7; text-align: center; padding-top: 50px; }
+        button { padding: 10px 20px; font-size: 16px; background-color: #0a84ff; border: none; color: #fff; border-radius: 5px; cursor: pointer; }
+        button:hover { background-color: #0066cc; }
+    </style>
+</head>
+<body>
+    <h1>You are not logged in.</h1>
+    <p>Please log in to view your tasks.</p>
+    <a href="{{ login_url }}"><button>Login with Google</button></a>
+</body>
+</html>

@@ -1,0 +1,6 @@
+/var/www/tasklist/
+│
+├── templates/
+│   ├── index.html
+├── app.py
+├── tasklist.conf
