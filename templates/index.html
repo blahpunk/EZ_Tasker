@@ -1,40 +1,107 @@
+<!-- /var/www/tasklist/templates/index.html -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <base href="{{ base_href }}">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EZ Tasker App</title>
-    <!-- Quill.js and Sortable.js from CDN -->
+    <title>EZ Tasker</title>
+
     <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>EZ Tasker</h1>
-            <div class="header-buttons">
-                <a href="{{ url_for('logout') }}"><button>Logout</button></a>
+            <div class="header-top">
+                <h1>EZ Tasker</h1>
+                <div class="header-buttons">
+                    <a href="{{ url_for('logout') }}"><button class="btn">Logout</button></a>
+                </div>
+            </div>
+
+            <div class="toolbar">
+                <input id="searchInput" type="search" placeholder="Search tasks..." autocomplete="off">
+
+                <select id="statusSelect">
+                    <option value="all">All</option>
+                    <option value="active">Active</option>
+                    <option value="completed">Completed</option>
+                </select>
+
+                <select id="specialSelect">
+                    <option value="">No special filter</option>
+                    <option value="overdue">Overdue</option>
+                    <option value="dueSoon">Due soon (7 days)</option>
+                </select>
+
+                <select id="sortSelect">
+                    <option value="manual">Manual</option>
+                    <option value="due">Due date</option>
+                    <option value="priority">Priority</option>
+                    <option value="updated">Recently updated</option>
+                    <option value="created">Recently created</option>
+                    <option value="title">Title</option>
+                </select>
+
+                <label class="checkbox">
+                    <input id="hideCompleted" type="checkbox">
+                    <span>Hide completed</span>
+                </label>
             </div>
         </header>
-        <button id="addTaskBtn">+ Add Task</button>
+
+        <button id="addTaskBtn" class="fab">+ Add Task</button>
 
         <main>
-            <div id="taskForm" style="display: none;">
-                <input type="text" id="taskTitle" placeholder="Task Title">
-                <input type="date" id="taskDueDate" placeholder="Due Date">
-                <div id="editor-container"></div>
-                <button id="saveTaskBtn">Save Task</button>
-            </div>
-            <div id="taskList">
-                <p id="noTasksMessage" style="display:none;">No tasks yet. Click "Add Task" to get started.</p>
-            </div>
+            <section id="taskForm" class="panel" style="display:none;">
+                <div class="form-row">
+                    <input type="text" id="taskTitle" placeholder="Task Title">
+                </div>
+
+                <div class="form-row form-grid">
+                    <div class="field">
+                        <label>Due date</label>
+                        <input type="date" id="taskDueDate">
+                    </div>
+
+                    <div class="field">
+                        <label>Priority</label>
+                        <select id="taskPriority">
+                            <option value="0">Low</option>
+                            <option value="1" selected>Medium</option>
+                            <option value="2">High</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label>Tags</label>
+                        <input type="text" id="taskTags" placeholder="comma-separated (e.g., bills, errands)">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div id="editor-container"></div>
+                </div>
+
+                <div class="form-actions">
+                    <button id="cancelTaskBtn" class="btn btn-secondary" type="button">Cancel</button>
+                    <button id="saveTaskBtn" class="btn btn-primary" type="button">Save</button>
+                </div>
+            </section>
+
+            <section id="taskListWrap">
+                <p id="noTasksMessage" class="empty" style="display:none;">
+                    No tasks yet. Click “Add Task” to get started.
+                </p>
+                <div id="taskList"></div>
+            </section>
         </main>
     </div>
-    <!-- Quill JS and Sortable.js from CDN -->
+
     <script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.14.0/Sortable.min.js"></script>
-    <!-- Load our custom scripts -->
     <script src="{{ url_for('static', filename='js/scripts.js') }}"></script>
 </body>
 </html>

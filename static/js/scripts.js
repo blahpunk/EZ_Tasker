@@ -1,123 +1,308 @@
+// /var/www/tasklist/static/js/scripts.js
+
 document.addEventListener('DOMContentLoaded', function () {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
     const taskList = document.getElementById('taskList');
+    const noTasksMessage = document.getElementById('noTasksMessage');
+
     const addTaskBtn = document.getElementById('addTaskBtn');
     const saveTaskBtn = document.getElementById('saveTaskBtn');
+    const cancelTaskBtn = document.getElementById('cancelTaskBtn');
+
     const taskForm = document.getElementById('taskForm');
     const taskTitleInput = document.getElementById('taskTitle');
     const taskDueDateInput = document.getElementById('taskDueDate');
+    const taskPriorityInput = document.getElementById('taskPriority');
+    const taskTagsInput = document.getElementById('taskTags');
+
+    const searchInput = document.getElementById('searchInput');
+    const statusSelect = document.getElementById('statusSelect');
+    const specialSelect = document.getElementById('specialSelect');
+    const sortSelect = document.getElementById('sortSelect');
+    const hideCompleted = document.getElementById('hideCompleted');
+
     const editorContainer = document.getElementById('editor-container');
-    let editor = new Quill(editorContainer, { theme: 'snow' });
+    const editor = new Quill(editorContainer, { theme: 'snow' });
 
-    let currentEditingTask = null;
     let tasks = [];
+    let currentEditingId = null;
+    let suppressExpandClick = false;
 
-    new Sortable(taskList, {
+    const DRAFT_KEY = 'ez_tasker_draft_v2';
+
+    function apiUrl(path) {
+        // keep relative; reverse proxy should handle it
+        return path.startsWith('/') ? path : `/${path}`;
+    }
+
+    function headersJson() {
+        return {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken
+        };
+    }
+
+    function isManualSort() {
+        return (sortSelect.value || 'manual') === 'manual' &&
+               (specialSelect.value || '') === '' &&
+               (searchInput.value || '').trim() === '' &&
+               (statusSelect.value || 'all') === 'all' &&
+               hideCompleted.checked === false;
+    }
+
+    function parseTagsInput(str) {
+        return (str || '')
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
+    }
+
+    function setFormVisible(visible) {
+        taskForm.style.display = visible ? 'block' : 'none';
+    }
+
+    function resetForm() {
+        taskTitleInput.value = '';
+        taskDueDateInput.value = '';
+        taskPriorityInput.value = '1';
+        taskTagsInput.value = '';
+        editor.setText('');
+        currentEditingId = null;
+        setFormVisible(false);
+        clearDraft();
+    }
+
+    function saveDraft() {
+        const draft = {
+            title: taskTitleInput.value || '',
+            due_date: taskDueDateInput.value || '',
+            priority: taskPriorityInput.value || '1',
+            tags: taskTagsInput.value || '',
+            description_html: editor.root.innerHTML || ''
+        };
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    }
+
+    function loadDraft() {
+        try {
+            const raw = localStorage.getItem(DRAFT_KEY);
+            if (!raw) return false;
+            const d = JSON.parse(raw);
+            if (!d) return false;
+            taskTitleInput.value = d.title || '';
+            taskDueDateInput.value = d.due_date || '';
+            taskPriorityInput.value = String(d.priority ?? '1');
+            taskTagsInput.value = d.tags || '';
+            editor.root.innerHTML = d.description_html || '';
+            return true;
+        } catch (_e) {
+            return false;
+        }
+    }
+
+    function clearDraft() {
+        localStorage.removeItem(DRAFT_KEY);
+    }
+
+    function debounce(fn, ms) {
+        let t = null;
+        return (...args) => {
+            clearTimeout(t);
+            t = setTimeout(() => fn(...args), ms);
+        };
+    }
+
+    const debouncedSaveDraft = debounce(saveDraft, 250);
+    taskTitleInput.addEventListener('input', debouncedSaveDraft);
+    taskDueDateInput.addEventListener('input', debouncedSaveDraft);
+    taskPriorityInput.addEventListener('change', debouncedSaveDraft);
+    taskTagsInput.addEventListener('input', debouncedSaveDraft);
+    editor.on('text-change', debouncedSaveDraft);
+
+    const sortable = new Sortable(taskList, {
         animation: 150,
         ghostClass: 'sortable-ghost',
         handle: '.drag-handle',
         delay: 150,
         delayOnTouchOnly: true,
         scroll: true,
-        onStart: () => document.body.style.overflow = 'hidden',
-        onEnd: () => {
+        onStart: () => {
+            document.body.style.overflow = 'hidden';
+            suppressExpandClick = true;
+        },
+        onEnd: async () => {
             document.body.style.overflow = '';
-            saveTaskOrder();
-        }
-    });
+            setTimeout(() => { suppressExpandClick = false; }, 0);
 
-    addTaskBtn.addEventListener('click', () => {
-        taskForm.style.display = 'block';
-        taskTitleInput.value = '';
-        taskDueDateInput.value = '';
-        editor.setText('');
-        currentEditingTask = null;
-    });
-
-    saveTaskBtn.addEventListener('click', async () => {
-        const taskTitle = taskTitleInput.value.trim();
-        const taskDescription = editor.root.innerHTML.trim();
-        const taskDueDate = taskDueDateInput.value ? new Date(taskDueDateInput.value).toLocaleDateString() : '';
-        const timestamp = new Date().toLocaleString();
-
-        if (taskTitle && taskDescription) {
-            if (currentEditingTask) {
-                tasks[currentEditingTask.index] = {
-                    ...tasks[currentEditingTask.index],
-                    title: taskTitle,
-                    description: taskDescription,
-                    dueDate: taskDueDate,
-                    timestamp: timestamp
-                };
-                await updateTask(currentEditingTask.index, tasks[currentEditingTask.index]);
-            } else {
-                const newTask = { title: taskTitle, description: taskDescription, dueDate: taskDueDate, timestamp: timestamp };
-                tasks.unshift(newTask);
-                await addTask(newTask);
+            if (!isManualSort()) {
+                // If not in manual mode, revert by reloading
+                await loadTasks();
+                return;
             }
-            resetForm();
-            loadTasks();
-        } else {
-            alert('Please provide both a title and a description for the task.');
+
+            await saveTaskOrder();
         }
     });
 
-    function resetForm() {
-        taskTitleInput.value = '';
-        taskDueDateInput.value = '';
-        editor.setText('');
-        taskForm.style.display = 'none';
-        currentEditingTask = null;
+    function setNoTasksMessage() {
+        const isEmpty = tasks.length === 0;
+        noTasksMessage.style.display = isEmpty ? 'block' : 'none';
     }
 
-    function addTaskToUI(task, index) {
+    function priorityLabel(p) {
+        if (p === 2) return { text: 'High', cls: 'priority-high' };
+        if (p === 0) return { text: 'Low', cls: 'priority-low' };
+        return { text: 'Medium', cls: 'priority-med' };
+    }
+
+    function dueBadge(due_date, completed) {
+        if (!due_date || completed) return null;
+        const today = new Date();
+        today.setHours(0,0,0,0);
+
+        const due = new Date(due_date + 'T00:00:00');
+        const diffDays = Math.floor((due - today) / (24 * 60 * 60 * 1000));
+
+        if (diffDays < 0) return { text: 'Overdue', cls: 'due-overdue' };
+        if (diffDays <= 7) return { text: 'Due soon', cls: 'due-soon' };
+        return null;
+    }
+
+    function fmtDate(iso) {
+        if (!iso) return '';
+        try {
+            const d = new Date(iso.includes('T') ? iso : (iso + 'T00:00:00'));
+            return d.toLocaleString();
+        } catch (_e) {
+            return iso;
+        }
+    }
+
+    function fmtDue(isoDate) {
+        if (!isoDate) return '';
+        try {
+            const d = new Date(isoDate + 'T00:00:00');
+            return d.toLocaleDateString();
+        } catch (_e) {
+            return isoDate;
+        }
+    }
+
+    function escapeText(s) {
+        const div = document.createElement('div');
+        div.innerText = s ?? '';
+        return div.innerHTML;
+    }
+
+    function addTaskToUI(task) {
         const taskItem = document.createElement('div');
         taskItem.className = 'task-item';
-        taskItem.setAttribute('data-id', index);
+        taskItem.setAttribute('data-id', task.id);
 
-        const taskTitle = document.createElement('h2');
-        taskTitle.innerText = task.title;
-
-        const arrow = document.createElement('span');
-        arrow.className = 'expand-arrow';
-        arrow.innerText = '';
-        taskTitle.appendChild(arrow);
+        const top = document.createElement('div');
+        top.className = 'task-top';
 
         const dragHandle = document.createElement('div');
         dragHandle.className = 'drag-handle';
         dragHandle.innerText = '⠿';
 
-        const taskDesc = document.createElement('p');
-        taskDesc.className = 'task-desc collapsed';
-        taskDesc.innerHTML = task.description;
+        const complete = document.createElement('input');
+        complete.type = 'checkbox';
+        complete.className = 'complete-toggle';
+        complete.checked = !!task.completed;
 
-        const taskMeta = document.createElement('div');
-        taskMeta.className = 'task-meta';
-        taskMeta.innerHTML = `<span>Created: ${task.timestamp}</span>${task.dueDate ? `<span>Due: ${task.dueDate}</span>` : ''}`;
+        const headline = document.createElement('div');
+        headline.className = 'task-headline';
+
+        const titleRow = document.createElement('div');
+        titleRow.className = 'task-title-row';
+
+        const title = document.createElement('h2');
+        title.className = 'task-title';
+        title.innerText = task.title || '';
+        if (task.completed) title.classList.add('completed');
+
+        const badges = document.createElement('div');
+        badges.className = 'badges';
+
+        const p = priorityLabel(Number(task.priority));
+        const prBadge = document.createElement('span');
+        prBadge.className = `badge ${p.cls}`;
+        prBadge.innerText = `Priority: ${p.text}`;
+
+        badges.appendChild(prBadge);
+
+        const db = dueBadge(task.due_date, task.completed);
+        if (db) {
+            const dueB = document.createElement('span');
+            dueB.className = `badge ${db.cls}`;
+            dueB.innerText = db.text;
+            badges.appendChild(dueB);
+        }
+
+        const arrow = document.createElement('span');
+        arrow.className = 'expand-arrow';
+        arrow.innerText = '';
+
+        titleRow.appendChild(title);
+        titleRow.appendChild(badges);
+        titleRow.appendChild(arrow);
+
+        const desc = document.createElement('div');
+        desc.className = 'task-desc collapsed';
+        desc.innerHTML = task.description_html || '';
+
+        const meta = document.createElement('div');
+        meta.className = 'task-meta';
+        const duePart = task.due_date ? `<span>Due: ${escapeText(fmtDue(task.due_date))}</span>` : '';
+        meta.innerHTML = `<span>Created: ${escapeText(fmtDate(task.created_at))}</span>${duePart}<span>Updated: ${escapeText(fmtDate(task.updated_at))}</span>`;
+
+        const tagsWrap = document.createElement('div');
+        tagsWrap.className = 'tags';
+        const tagList = Array.isArray(task.tags) ? task.tags : [];
+        if (tagList.length) {
+            tagList.forEach(t => {
+                const chip = document.createElement('span');
+                chip.className = 'tag';
+                chip.innerText = t;
+                tagsWrap.appendChild(chip);
+            });
+        }
 
         const actions = document.createElement('div');
         actions.className = 'actions';
+
         const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-secondary';
         editBtn.innerText = 'Edit';
+
         const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-danger';
         deleteBtn.innerText = 'Delete';
 
         actions.appendChild(editBtn);
         actions.appendChild(deleteBtn);
 
-        taskItem.appendChild(dragHandle);
-        taskItem.appendChild(taskTitle);
-        taskItem.appendChild(taskDesc);
-        taskItem.appendChild(taskMeta);
+        headline.appendChild(titleRow);
+
+        top.appendChild(dragHandle);
+        top.appendChild(complete);
+        top.appendChild(headline);
+
+        taskItem.appendChild(top);
+        taskItem.appendChild(desc);
+        taskItem.appendChild(meta);
+        if (tagList.length) taskItem.appendChild(tagsWrap);
         taskItem.appendChild(actions);
 
         taskList.appendChild(taskItem);
 
         requestAnimationFrame(() => {
-            const lineHeight = parseFloat(getComputedStyle(taskDesc).lineHeight) || 20;
+            const lineHeight = parseFloat(getComputedStyle(desc).lineHeight) || 20;
             const maxLines = 3;
             const maxHeight = lineHeight * maxLines;
-
-            if (taskDesc.scrollHeight > maxHeight + 2) {
+            if (desc.scrollHeight > maxHeight + 2) {
                 arrow.innerText = '▼';
                 taskItem.classList.add('expandable');
             } else {
@@ -126,80 +311,181 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         taskItem.addEventListener('click', () => {
+            if (suppressExpandClick) return;
             if (!taskItem.classList.contains('expandable')) return;
 
-            const expanded = taskDesc.classList.toggle('expanded');
-            taskDesc.classList.toggle('collapsed', !expanded);
+            const expanded = desc.classList.toggle('expanded');
+            desc.classList.toggle('collapsed', !expanded);
             arrow.innerText = expanded ? '▲' : '▼';
+        });
+
+        complete.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const newVal = complete.checked;
+            await updateTask(task.id, {
+                completed: newVal
+            });
+            await loadTasks();
         });
 
         editBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            editTask(task, index);
+            editTask(task);
         });
 
         deleteBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
-            const confirmDelete = confirm("Are you sure you want to delete this task?");
-            if (confirmDelete) {
-                await deleteTask(index);
-                loadTasks();
-            }
+            const confirmDelete = confirm("Delete this task?");
+            if (!confirmDelete) return;
+            await deleteTask(task.id);
+            await loadTasks();
         });
     }
 
-    function editTask(task, index) {
-        taskTitleInput.value = task.title;
-        taskDueDateInput.value = task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '';
-        editor.root.innerHTML = task.description;
-        taskForm.style.display = 'block';
-        currentEditingTask = { index: index };
+    function editTask(task) {
+        currentEditingId = task.id;
+        setFormVisible(true);
+
+        taskTitleInput.value = task.title || '';
+        taskDueDateInput.value = task.due_date || '';
+        taskPriorityInput.value = String(task.priority ?? 1);
+        taskTagsInput.value = Array.isArray(task.tags) ? task.tags.join(', ') : '';
+        editor.root.innerHTML = task.description_html || '';
+
+        saveDraft();
+        taskTitleInput.focus();
     }
 
     async function loadTasks() {
+        const q = (searchInput.value || '').trim();
+        const status = statusSelect.value || 'all';
+        const special = specialSelect.value || '';
+        const sort = sortSelect.value || 'manual';
+        const hide = hideCompleted.checked ? '1' : '0';
+
+        const params = new URLSearchParams();
+        if (q) params.set('q', q);
+        if (status) params.set('status', status);
+        if (special) params.set('special', special);
+        if (sort) params.set('sort', sort);
+        if (hide === '1') params.set('hide_completed', hide);
+
         taskList.innerHTML = '';
-        const response = await fetch('api/tasks');
-        tasks = await response.json();
-        tasks.forEach((task, index) => addTaskToUI(task, index));
+        noTasksMessage.style.display = 'none';
+
+        const res = await fetch(apiUrl(`/api/v1/tasks?${params.toString()}`));
+        if (!res.ok) {
+            noTasksMessage.style.display = 'block';
+            noTasksMessage.innerText = 'Failed to load tasks.';
+            return;
+        }
+
+        tasks = await res.json();
+        tasks.forEach(addTaskToUI);
+        setNoTasksMessage();
+
+        // Enable/disable sorting based on current mode
+        sortable.option("disabled", !isManualSort());
     }
 
     async function saveTaskOrder() {
-        const orderedTasks = [];
-        taskList.querySelectorAll('.task-item').forEach((taskItem, newIndex) => {
-            const id = taskItem.getAttribute('data-id');
-            tasks[id].index = newIndex;
-            orderedTasks.push(tasks[id]);
+        const orderedIds = [];
+        taskList.querySelectorAll('.task-item').forEach((taskItem) => {
+            orderedIds.push(taskItem.getAttribute('data-id'));
         });
-        tasks = orderedTasks;
-        await fetch('api/tasks/order', {
+
+        await fetch(apiUrl('/api/v1/tasks/reorder'), {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(orderedTasks)
+            headers: headersJson(),
+            body: JSON.stringify({ ordered_ids: orderedIds })
         });
     }
 
-    async function addTask(task) {
-        await fetch('api/tasks', {
+    async function createTask(payload) {
+        const res = await fetch(apiUrl('/api/v1/tasks'), {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(task)
+            headers: headersJson(),
+            body: JSON.stringify(payload)
         });
+        return res;
     }
 
-    async function updateTask(index, task) {
-        await fetch(`api/tasks/${index}`, {
+    async function updateTask(id, payload) {
+        const res = await fetch(apiUrl(`/api/v1/tasks/${encodeURIComponent(id)}`), {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(task)
+            headers: headersJson(),
+            body: JSON.stringify(payload)
         });
+        return res;
     }
 
-    async function deleteTask(index) {
-        tasks.splice(index, 1);
-        await fetch(`api/tasks/${index}`, {
-            method: 'DELETE'
+    async function deleteTask(id) {
+        const res = await fetch(apiUrl(`/api/v1/tasks/${encodeURIComponent(id)}`), {
+            method: 'DELETE',
+            headers: { 'X-CSRF-Token': csrfToken }
         });
+        return res;
     }
 
+    addTaskBtn.addEventListener('click', () => {
+        setFormVisible(true);
+        currentEditingId = null;
+
+        const hadDraft = loadDraft();
+        if (!hadDraft) {
+            taskTitleInput.value = '';
+            taskDueDateInput.value = '';
+            taskPriorityInput.value = '1';
+            taskTagsInput.value = '';
+            editor.setText('');
+        }
+
+        taskTitleInput.focus();
+    });
+
+    cancelTaskBtn.addEventListener('click', () => {
+        resetForm();
+    });
+
+    saveTaskBtn.addEventListener('click', async () => {
+        const title = (taskTitleInput.value || '').trim();
+        const description_html = (editor.root.innerHTML || '').trim();
+        const due_date = (taskDueDateInput.value || '').trim() || null;
+        const priority = Number(taskPriorityInput.value || 1);
+        const tags = parseTagsInput(taskTagsInput.value);
+
+        if (!title) {
+            alert('Title is required.');
+            return;
+        }
+
+        const payload = { title, description_html, due_date, priority, tags };
+
+        if (currentEditingId) {
+            const res = await updateTask(currentEditingId, payload);
+            if (!res.ok) {
+                alert('Failed to update task.');
+                return;
+            }
+        } else {
+            const res = await createTask(payload);
+            if (!res.ok) {
+                alert('Failed to create task.');
+                return;
+            }
+        }
+
+        resetForm();
+        await loadTasks();
+    });
+
+    const debouncedLoad = debounce(loadTasks, 200);
+    searchInput.addEventListener('input', debouncedLoad);
+    statusSelect.addEventListener('change', loadTasks);
+    specialSelect.addEventListener('change', loadTasks);
+    sortSelect.addEventListener('change', loadTasks);
+    hideCompleted.addEventListener('change', loadTasks);
+
+    // Initial load
     loadTasks();
 });

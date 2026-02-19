@@ -1,4 +1,6 @@
+# /var/www/tasklist/requirements.txt
 
 Flask==2.2.5
 gunicorn==20.1.0
-
+python-dotenv==1.0.1
+bleach==6.1.0
