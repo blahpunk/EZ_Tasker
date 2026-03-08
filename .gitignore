@@ -1,0 +1,14 @@
+# Secrets
+.env
+.env.*
+!.env-sample
+# Runtime and data
+*.sqlite
+*.sqlite3
+*.db
+*.db-*
+*.bak
+# Editor and OS
+.DS_Store
+*.swp
+*.swo
