@@ -26,9 +26,9 @@ Main app view:
 
 ![Main app view](screenshots/Screenshot_2026-03-08_14-21-13.png)
 
-Task list and editor state:
+Mobile view:
 
-![Task list and editor](screenshots/Screenshot_20260308-142323.png)
+<img src="screenshots/Screenshot_20260308-142323.png" alt="Mobile view" width="360" />
 
 
 ## Requirements
