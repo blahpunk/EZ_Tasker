@@ -29,6 +29,14 @@ body {
     font-size: 16px;
 }
 
+body.no-scroll {
+    overflow: hidden;
+}
+
+.is-hidden {
+    display: none !important;
+}
+
 .container {
     max-width: 980px;
     margin: auto;
@@ -360,6 +368,25 @@ header h1 {
     -webkit-box-orient: vertical;
     overflow: hidden;
     position: relative;
+}
+
+.task-desc p {
+    margin: 0;
+}
+
+.task-desc ol,
+.task-desc ul {
+    margin: 0.2em 0;
+    padding-left: 1.3em;
+}
+
+.task-desc li {
+    margin: 0.15em 0;
+}
+
+/* Quill uses <ol><li data-list="bullet"> for unordered lists. */
+.task-desc ol li[data-list="bullet"] {
+    list-style-type: disc;
 }
 
 .task-desc.collapsed::after {

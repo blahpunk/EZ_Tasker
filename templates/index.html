@@ -9,7 +9,7 @@
     <title>EZ Tasker</title>
 
     <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css', v=asset_version('css/styles.css')) }}">
 </head>
 <body>
     <div class="container">
@@ -17,6 +17,7 @@
             <div class="header-top">
                 <h1>EZ Tasker</h1>
                 <div class="header-buttons">
+                    <a href="https://blahpunk.com"><button class="btn btn-secondary">Home</button></a>
                     <a href="{{ url_for('logout') }}"><button class="btn">Logout</button></a>
                 </div>
             </div>
@@ -55,7 +56,7 @@
         <button id="addTaskBtn" class="fab">+ Add Task</button>
 
         <main>
-            <section id="taskForm" class="panel" style="display:none;">
+            <section id="taskForm" class="panel is-hidden">
                 <div class="form-row">
                     <input type="text" id="taskTitle" placeholder="Task Title">
                 </div>
@@ -92,7 +93,7 @@
             </section>
 
             <section id="taskListWrap">
-                <p id="noTasksMessage" class="empty" style="display:none;">
+                <p id="noTasksMessage" class="empty is-hidden">
                     No tasks yet. Click “Add Task” to get started.
                 </p>
                 <div id="taskList"></div>
@@ -102,6 +103,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.14.0/Sortable.min.js"></script>
-    <script src="{{ url_for('static', filename='js/scripts.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/scripts.js', v=asset_version('js/scripts.js')) }}"></script>
 </body>
 </html>

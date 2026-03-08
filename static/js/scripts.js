@@ -58,8 +58,66 @@ document.addEventListener('DOMContentLoaded', function () {
             .filter(Boolean);
     }
 
+    function normalizeQuillLists(html) {
+        const container = document.createElement('div');
+        container.innerHTML = html || '';
+
+        container.querySelectorAll('ol').forEach((ol) => {
+            const children = Array.from(ol.children).filter((el) => el.tagName === 'LI');
+            if (!children.length) return;
+
+            const frag = document.createDocumentFragment();
+            let currentList = null;
+            let currentType = '';
+
+            children.forEach((li) => {
+                const listType = li.getAttribute('data-list') === 'bullet' ? 'ul' : 'ol';
+                if (!currentList || currentType !== listType) {
+                    currentList = document.createElement(listType);
+                    frag.appendChild(currentList);
+                    currentType = listType;
+                }
+                li.removeAttribute('data-list');
+                currentList.appendChild(li);
+            });
+
+            ol.replaceWith(frag);
+        });
+
+        const topLevel = Array.from(container.childNodes).filter((node) => {
+            return !(node.nodeType === Node.TEXT_NODE && !(node.textContent || '').trim());
+        });
+        const isParagraphOnly = topLevel.length > 0 && topLevel.every((node) => {
+            return node.nodeType === Node.ELEMENT_NODE && node.tagName === 'P';
+        });
+        if (isParagraphOnly) {
+            const frag = document.createDocumentFragment();
+            topLevel.forEach((node, idx) => {
+                const p = node;
+                const htmlVal = (p.innerHTML || '').trim().toLowerCase();
+                const isEmpty = !htmlVal || htmlVal === '<br>';
+                if (!isEmpty) {
+                    while (p.firstChild) {
+                        frag.appendChild(p.firstChild);
+                    }
+                }
+                if (idx < topLevel.length - 1) {
+                    frag.appendChild(document.createElement('br'));
+                }
+            });
+            container.replaceChildren(frag);
+        }
+
+        return container.innerHTML;
+    }
+
+    function setHidden(el, hidden) {
+        if (!el) return;
+        el.classList.toggle('is-hidden', !!hidden);
+    }
+
     function setFormVisible(visible) {
-        taskForm.style.display = visible ? 'block' : 'none';
+        setHidden(taskForm, !visible);
     }
 
     function resetForm() {
@@ -79,7 +137,7 @@ document.addEventListener('DOMContentLoaded', function () {
             due_date: taskDueDateInput.value || '',
             priority: taskPriorityInput.value || '1',
             tags: taskTagsInput.value || '',
-            description_html: editor.root.innerHTML || ''
+            description_html: normalizeQuillLists(editor.root.innerHTML || '')
         };
         localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
     }
@@ -128,11 +186,11 @@ document.addEventListener('DOMContentLoaded', function () {
         delayOnTouchOnly: true,
         scroll: true,
         onStart: () => {
-            document.body.style.overflow = 'hidden';
+            document.body.classList.add('no-scroll');
             suppressExpandClick = true;
         },
         onEnd: async () => {
-            document.body.style.overflow = '';
+            document.body.classList.remove('no-scroll');
             setTimeout(() => { suppressExpandClick = false; }, 0);
 
             if (!isManualSort()) {
@@ -147,7 +205,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function setNoTasksMessage() {
         const isEmpty = tasks.length === 0;
-        noTasksMessage.style.display = isEmpty ? 'block' : 'none';
+        setHidden(noTasksMessage, !isEmpty);
     }
 
     function priorityLabel(p) {
@@ -306,13 +364,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 arrow.innerText = '▼';
                 taskItem.classList.add('expandable');
             } else {
-                arrow.style.display = 'none';
+                setHidden(arrow, true);
             }
         });
 
         taskItem.addEventListener('click', () => {
-            if (suppressExpandClick) return;
-            if (!taskItem.classList.contains('expandable')) return;
+        if (suppressExpandClick) return;
+        if (!taskItem.classList.contains('expandable')) return;
 
             const expanded = desc.classList.toggle('expanded');
             desc.classList.toggle('collapsed', !expanded);
@@ -371,11 +429,11 @@ document.addEventListener('DOMContentLoaded', function () {
         if (hide === '1') params.set('hide_completed', hide);
 
         taskList.innerHTML = '';
-        noTasksMessage.style.display = 'none';
+        setHidden(noTasksMessage, true);
 
         const res = await fetch(apiUrl(`/api/v1/tasks?${params.toString()}`));
         if (!res.ok) {
-            noTasksMessage.style.display = 'block';
+            setHidden(noTasksMessage, false);
             noTasksMessage.innerText = 'Failed to load tasks.';
             return;
         }
@@ -449,7 +507,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     saveTaskBtn.addEventListener('click', async () => {
         const title = (taskTitleInput.value || '').trim();
-        const description_html = (editor.root.innerHTML || '').trim();
+        const description_html = normalizeQuillLists((editor.root.innerHTML || '').trim());
         const due_date = (taskDueDateInput.value || '').trim() || null;
         const priority = Number(taskPriorityInput.value || 1);
         const tags = parseTagsInput(taskTagsInput.value);

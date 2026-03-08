@@ -4,20 +4,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login Required</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #1c1c1e; color: #f2f2f7; text-align: center; padding-top: 50px; }
-        button { padding: 10px 20px; font-size: 16px; background-color: #0a84ff; border: none; color: #fff; border-radius: 8px; cursor: pointer; }
-        button:hover { background-color: #0066cc; }
-        .card { display: inline-block; padding: 24px; background: #23232a; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
-        p { color: #cfcfe6; }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/login_prompt.css', v=asset_version('css/login_prompt.css')) }}">
 </head>
 <body>
-    <div class="card">
+    <div class="login-card">
         <h1>You are not logged in.</h1>
         <p>Please log in to view your tasks.</p>
-        <a href="{{ login_url }}"><button>Login with Google</button></a>
+        <div class="login-actions">
+            <a href="https://blahpunk.com" class="btn btn-secondary">Home</a>
+            <a href="{{ login_url }}" class="btn btn-primary">Login with Google</a>
+        </div>
     </div>
 </body>
 </html>

@@ -1,0 +1,81 @@
+/* /var/www/tasklist/static/css/login_prompt.css */
+
+:root {
+    --bg1: #0a0a1a;
+    --bg2: #1f1f2f;
+    --card: #23232a;
+    --text: #f2f2f7;
+    --muted: #cfcfe6;
+    --blue: #0a84ff;
+    --blue2: #0066cc;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: linear-gradient(135deg, var(--bg1), var(--bg2));
+    color: var(--text);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+.login-card {
+    width: min(440px, 100%);
+    padding: 24px;
+    background: var(--card);
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    text-align: center;
+}
+
+.login-card h1 {
+    margin: 0 0 10px 0;
+    font-size: 1.6rem;
+}
+
+.login-card p {
+    margin: 0 0 18px 0;
+    color: var(--muted);
+}
+
+.login-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+}
+
+.btn {
+    display: inline-block;
+    text-decoration: none;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.btn-primary {
+    color: #fff;
+    background: var(--blue);
+}
+
+.btn-primary:hover {
+    background: var(--blue2);
+}
+
+.btn-secondary {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
