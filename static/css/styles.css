@@ -65,6 +65,21 @@ header h1 {
     letter-spacing: 0.2px;
 }
 
+.dev-mode-badge {
+    display: inline-block;
+    margin-left: 10px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #141414;
+    background: var(--warn);
+    text-shadow: none;
+    box-shadow: 0 0 12px rgba(255, 204, 0, 0.35);
+    vertical-align: middle;
+}
+
 .header-buttons {
     display: flex;
     gap: 10px;

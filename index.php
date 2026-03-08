@@ -19,6 +19,9 @@ $dataEncryptionKey = env_string('DATA_ENCRYPTION_KEY', '');
 $bootstrapAudience = strtolower(env_string('BOOTSTRAP_COOKIE_AUDIENCE', 'tasks.blahpunk.com'));
 $bootstrapMaxAgeSeconds = env_int('BOOTSTRAP_COOKIE_MAX_AGE_SECONDS', 300);
 $bootstrapClockSkewSeconds = env_int('BOOTSTRAP_COOKIE_CLOCK_SKEW_SECONDS', 60);
+$appEnv = strtolower(env_string('APP_ENV', 'production'));
+$authMode = strtolower(env_string('AUTH_MODE', 'oauth'));
+$devUserEmail = env_string('DEV_USER_EMAIL', 'dev@localhost.test');
 
 $decodedDataKey = base64url_decode($dataEncryptionKey);
 
@@ -35,6 +38,9 @@ $CONFIG = [
     'bootstrap_cookie_audience' => $bootstrapAudience,
     'bootstrap_cookie_max_age_seconds' => $bootstrapMaxAgeSeconds,
     'bootstrap_cookie_clock_skew_seconds' => $bootstrapClockSkewSeconds,
+    'app_env' => $appEnv,
+    'auth_mode' => $authMode,
+    'dev_user_email' => $devUserEmail,
     'fernet_signing_key' => $decodedDataKey !== null ? substr($decodedDataKey, 0, 16) : '',
     'fernet_encryption_key' => $decodedDataKey !== null ? substr($decodedDataKey, 16, 16) : '',
 ];
@@ -50,6 +56,15 @@ if ($userIdSecret === '') {
 }
 if ($bootstrapAudience === '') {
     server_misconfigured('BOOTSTRAP_COOKIE_AUDIENCE must be set.');
+}
+if (!in_array($authMode, ['oauth', 'dev'], true)) {
+    server_misconfigured('AUTH_MODE must be oauth or dev.');
+}
+if ($authMode === 'dev' && !is_dev_runtime_allowed()) {
+    server_misconfigured('AUTH_MODE=dev is only allowed for local hostnames or APP_ENV=development.');
+}
+if ($authMode === 'dev' && !is_valid_email(normalize_email($devUserEmail))) {
+    server_misconfigured('DEV_USER_EMAIL must be a valid email when AUTH_MODE=dev.');
 }
 
 start_session();
@@ -283,6 +298,9 @@ function dispatch_request(): never
     if ($method === 'GET' && $path === '/login') {
         handle_login_prompt();
     }
+    if ($method === 'GET' && $path === '/dev-login') {
+        handle_dev_login();
+    }
     if ($method === 'GET' && $path === '/logout') {
         handle_logout();
     }
@@ -362,6 +380,7 @@ function handle_index(): never
         redirect('/login');
     }
 
+    $isDevAuth = is_dev_auth_enabled();
     $csrf = ensure_csrf_token();
     $stylesVersion = rawurlencode(asset_version('css/styles.css'));
     $scriptsVersion = rawurlencode(asset_version('js/scripts.js'));
@@ -384,7 +403,11 @@ function handle_index(): never
     echo "    <div class=\"container\">\n";
     echo "        <header>\n";
     echo "            <div class=\"header-top\">\n";
-    echo "                <h1>EZ Tasker</h1>\n";
+    echo "                <h1>EZ Tasker";
+    if ($isDevAuth) {
+        echo " <span class=\"dev-mode-badge\">DEV MODE</span>";
+    }
+    echo "</h1>\n";
     echo "                <div class=\"header-buttons\">\n";
     echo "                    <a href=\"https://blahpunk.com\"><button class=\"btn btn-secondary\">Home</button></a>\n";
     echo "                    <a href=\"/logout\"><button class=\"btn\">Logout</button></a>\n";
@@ -466,7 +489,9 @@ function handle_index(): never
 
 function handle_login_prompt(): never
 {
+    $useDevAuth = is_dev_auth_enabled();
     $loginUrl = build_login_url();
+    $devLoginUrl = build_dev_login_url();
     $cssVersion = rawurlencode(asset_version('css/login_prompt.css'));
 
     send_security_headers();
@@ -483,15 +508,48 @@ function handle_login_prompt(): never
     echo "<body>\n";
     echo "    <div class=\"login-card\">\n";
     echo "        <h1>You are not logged in.</h1>\n";
-    echo "        <p>Please log in to view your tasks.</p>\n";
+    if ($useDevAuth) {
+        echo "        <p>Development auth mode is enabled. Continue with a local dev account.</p>\n";
+    } else {
+        echo "        <p>Please log in to view your tasks.</p>\n";
+    }
     echo "        <div class=\"login-actions\">\n";
     echo "            <a href=\"https://blahpunk.com\" class=\"btn btn-secondary\">Home</a>\n";
-    echo '            <a href="' . h($loginUrl) . '" class="btn btn-primary">Login with Google</a>' . "\n";
+    if ($useDevAuth) {
+        echo '            <a href="' . h($devLoginUrl) . '" class="btn btn-primary">Continue (Dev Mode)</a>' . "\n";
+    } else {
+        echo '            <a href="' . h($loginUrl) . '" class="btn btn-primary">Login with Google</a>' . "\n";
+    }
     echo "        </div>\n";
     echo "    </div>\n";
     echo "</body>\n";
     echo "</html>\n";
     exit;
+}
+
+function handle_dev_login(): never
+{
+    if (!is_dev_auth_enabled()) {
+        send_security_headers();
+        http_response_code(404);
+        header('Content-Type: text/plain; charset=UTF-8');
+        echo 'Not found';
+        exit;
+    }
+
+    $requested = trim((string) ($_GET['email'] ?? ''));
+    $email = normalize_email($requested !== '' ? $requested : (string) cfg('dev_user_email'));
+    if (!is_valid_email($email)) {
+        send_security_headers();
+        http_response_code(400);
+        header('Content-Type: text/plain; charset=UTF-8');
+        echo 'Invalid dev user email.';
+        exit;
+    }
+
+    $_SESSION['google_id'] = $email;
+    ensure_csrf_token();
+    redirect('/');
 }
 
 function handle_logout(): never
@@ -531,6 +589,10 @@ function handle_logout(): never
 
 function build_login_url(): string
 {
+    if (is_dev_auth_enabled()) {
+        return build_dev_login_url();
+    }
+
     $query = http_build_query([
         'next' => 'https://tasks.blahpunk.com',
         'aud' => (string) cfg('bootstrap_cookie_audience'),
@@ -538,6 +600,57 @@ function build_login_url(): string
     ]);
     return 'https://secure.blahpunk.com/oauth_login?' . $query;
 }
+
+function build_dev_login_url(): string
+{
+    $email = normalize_email((string) cfg('dev_user_email'));
+    return '/dev-login?email=' . rawurlencode($email);
+}
+
+function auth_mode(): string
+{
+    $mode = strtolower(trim((string) cfg('auth_mode')));
+    return in_array($mode, ['oauth', 'dev'], true) ? $mode : 'oauth';
+}
+
+function is_dev_auth_enabled(): bool
+{
+    return auth_mode() === 'dev';
+}
+
+function is_dev_runtime_allowed(): bool
+{
+    $appEnv = strtolower(trim((string) cfg('app_env')));
+    if (in_array($appEnv, ['dev', 'development', 'local'], true)) {
+        return true;
+    }
+    return is_local_request_host();
+}
+
+function is_local_request_host(): bool
+{
+    $rawHost = strtolower(trim((string) ($_SERVER['HTTP_HOST'] ?? '')));
+    if ($rawHost === '') {
+        return false;
+    }
+
+    $host = $rawHost;
+    if (str_starts_with($host, '[')) {
+        $end = strpos($host, ']');
+        if ($end !== false) {
+            $host = substr($host, 1, $end - 1);
+        }
+    } else {
+        $host = explode(':', $host)[0];
+    }
+
+    if (in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
+        return true;
+    }
+
+    return str_ends_with($host, '.local') || str_ends_with($host, '.test');
+}
+
 
 function redirect(string $location): never
 {
@@ -614,6 +727,10 @@ function ensure_csrf_or_403(): void
 function load_user_from_cookie(): void
 {
     if (is_logged_in()) {
+        return;
+    }
+
+    if (is_dev_auth_enabled()) {
         return;
     }
 

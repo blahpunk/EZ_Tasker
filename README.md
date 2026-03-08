@@ -64,6 +64,9 @@ Required:
 
 Optional:
 
+- `APP_ENV` (default `production`; supports `development`/`local`/`dev`)
+- `AUTH_MODE` (default `oauth`; use `dev` for clone-and-run local auth)
+- `DEV_USER_EMAIL` (default `dev@localhost.test`; used in `AUTH_MODE=dev`)
 - `DATA_DIR` (default `/var/lib/ez_tasker`)
 - `DB_PATH` (default `${DATA_DIR}/tasks.db`)
 - `STATIC_ASSET_VERSION` (cache-busting token)
@@ -99,6 +102,9 @@ SECURE_AUTH_SECRET=<shared-secret-with-secure-auth-service>
 USER_ID_SECRET=<strong-random-secret>
 DATA_ENCRYPTION_KEY=<urlsafe-base64-32-byte-key>
 BOOTSTRAP_COOKIE_AUDIENCE=tasks.blahpunk.com
+APP_ENV=production
+AUTH_MODE=oauth
+DEV_USER_EMAIL=dev@localhost.test
 BOOTSTRAP_COOKIE_MAX_AGE_SECONDS=300
 BOOTSTRAP_COOKIE_CLOCK_SKEW_SECONDS=60
 # Optional:
@@ -135,8 +141,12 @@ Then visit `http://127.0.0.1:8080/`.
 
 Notes:
 
-- Login is enforced. Without valid bootstrap cookies from your auth service, you will be redirected to `/login`.
-- If you run this outside the production domain setup, ensure your auth bootstrap flow and cookie secrets still match.
+- Fastest clone-and-run path:
+  - set `AUTH_MODE=dev`
+  - set `APP_ENV=development`
+  - optionally set `DEV_USER_EMAIL=you@example.test`
+  - open `/login` and click `Continue (Dev Mode)`
+- OAuth mode still works when `AUTH_MODE=oauth` (default).
 
 ## Web Server Routing
 
@@ -179,7 +189,20 @@ server {
 }
 ```
 
-## Authentication Contract
+## Authentication
+
+`AUTH_MODE` controls login behavior:
+
+- `oauth` (default): uses external bootstrap cookies from your auth service
+- `dev`: bypasses external OAuth and logs in via `/dev-login` using `DEV_USER_EMAIL`
+
+Guardrails for dev mode:
+
+- `AUTH_MODE=dev` is only allowed when:
+  - request host is local (`localhost`, `127.0.0.1`, `::1`, `.local`, `.test`), or
+  - `APP_ENV` is set to `development`/`local`/`dev`
+
+### OAuth Contract (`AUTH_MODE=oauth`)
 
 The app trusts two cookies:
 
@@ -193,7 +216,7 @@ Validation performed server-side:
 - audience match against `BOOTSTRAP_COOKIE_AUDIENCE`
 - claim window checks (`iat`, `exp`, `nbf`) with configured skew and max-age
 
-Login URL is built as:
+OAuth login URL:
 
 - `https://secure.blahpunk.com/oauth_login?next=https://tasks.blahpunk.com&aud=<aud>&max_age=<seconds>`
 
@@ -253,8 +276,8 @@ Indexes and schema are initialized automatically in `init_db()`.
   - verify required `.env` values
   - verify `DATA_ENCRYPTION_KEY` decodes to exactly 32 bytes
 - Redirect loop to `/login`:
-  - verify `user` and `user_sig` cookies are present
-  - verify `SECURE_AUTH_SECRET` and cookie `aud/iat/exp` claims
+  - if using `AUTH_MODE=oauth`: verify `user` and `user_sig` cookies, `SECURE_AUTH_SECRET`, and `aud/iat/exp` claims
+  - if using `AUTH_MODE=dev`: verify `APP_ENV`/host satisfies dev-mode guardrails and `DEV_USER_EMAIL` is valid
 - DB errors:
   - confirm PHP has `pdo_sqlite`
   - confirm web user can write `DATA_DIR`
@@ -264,10 +287,10 @@ Indexes and schema are initialized automatically in `init_db()`.
 ## Deployment Checklist
 
 - `.env` present with strong secrets
+- `AUTH_MODE=oauth` in production
 - writable `DATA_DIR` and DB path
 - PHP extensions installed
 - HTTPS enabled
 - static path mapping verified (`/tasks/static/...`)
 - auth service cookie contract verified
 - `php -l index.php` clean
-
