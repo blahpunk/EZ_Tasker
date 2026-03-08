@@ -45,6 +45,7 @@ Mobile view:
 ## Repository Layout
 
 - [`index.php`](/var/www/tasks.blahpunk.com/index.php): all server routing, auth checks, API handlers, DB init, encryption
+- [`scripts/rotate_data_encryption.php`](/var/www/tasks.blahpunk.com/scripts/rotate_data_encryption.php): re-encrypt task content to current data key
 - [`static/js/scripts.js`](/var/www/tasks.blahpunk.com/static/js/scripts.js): UI logic and API calls
 - [`static/css/styles.css`](/var/www/tasks.blahpunk.com/static/css/styles.css): main app styles
 - [`static/css/login_prompt.css`](/var/www/tasks.blahpunk.com/static/css/login_prompt.css): login prompt styles
@@ -67,6 +68,8 @@ Optional:
 - `APP_ENV` (default `production`; supports `development`/`local`/`dev`)
 - `AUTH_MODE` (default `oauth`; use `dev` for clone-and-run local auth)
 - `DEV_USER_EMAIL` (default `dev@localhost.test`; used in `AUTH_MODE=dev`)
+- `USER_ID_PREVIOUS_SECRETS` (comma-separated fallback secrets during `USER_ID_SECRET` rotation)
+- `DATA_ENCRYPTION_PREVIOUS_KEYS` (comma-separated fallback keys during `DATA_ENCRYPTION_KEY` rotation)
 - `DATA_DIR` (default `/var/lib/ez_tasker`)
 - `DB_PATH` (default `${DATA_DIR}/tasks.db`)
 - `STATIC_ASSET_VERSION` (cache-busting token)
@@ -108,6 +111,8 @@ DEV_USER_EMAIL=dev@localhost.test
 BOOTSTRAP_COOKIE_MAX_AGE_SECONDS=300
 BOOTSTRAP_COOKIE_CLOCK_SKEW_SECONDS=60
 # Optional:
+# USER_ID_PREVIOUS_SECRETS=<old-secret-1>,<old-secret-2>
+# DATA_ENCRYPTION_PREVIOUS_KEYS=<old-key-1>,<old-key-2>
 # DATA_DIR=/var/lib/ez_tasker
 # DB_PATH=/var/lib/ez_tasker/tasks.db
 # STATIC_ASSET_VERSION=20260308
@@ -269,6 +274,40 @@ Indexes and schema are initialized automatically in `init_db()`.
 - On startup, any plaintext legacy task content is migrated to encrypted values.
 - Legacy per-email JSON task files are imported once for users with no DB tasks.
 - `STATIC_ASSET_VERSION` can be set for deterministic cache busting during deploys.
+- `USER_ID_PREVIOUS_SECRETS` allows old user namespaces to auto-migrate on next login.
+- `DATA_ENCRYPTION_PREVIOUS_KEYS` allows old ciphertext to be read during key rotation.
+
+## Secret Rotation (No Task Loss)
+
+Rotate compromised secrets in this order:
+
+1. `SECRET_KEY`
+2. `SECURE_AUTH_SECRET` (this app and auth service)
+3. `USER_ID_SECRET` (with previous fallback)
+4. `DATA_ENCRYPTION_KEY` (with previous fallback, then re-encrypt)
+
+### `USER_ID_SECRET` Rotation
+
+1. Set new `USER_ID_SECRET`.
+2. Set `USER_ID_PREVIOUS_SECRETS` to include the old secret.
+3. Deploy.
+4. Users keep access; old namespaces migrate to new IDs on login.
+5. After a full login cycle across users, remove old secret(s) from `USER_ID_PREVIOUS_SECRETS`.
+
+### `DATA_ENCRYPTION_KEY` Rotation
+
+1. Set new `DATA_ENCRYPTION_KEY`.
+2. Set `DATA_ENCRYPTION_PREVIOUS_KEYS` to include old key(s).
+3. Deploy.
+4. Run re-encryption script to move all task fields to the new key:
+
+```bash
+php scripts/rotate_data_encryption.php --dry-run
+php scripts/rotate_data_encryption.php
+```
+
+5. Verify app reads/writes tasks.
+6. Remove old key(s) from `DATA_ENCRYPTION_PREVIOUS_KEYS`.
 
 ## Troubleshooting
 

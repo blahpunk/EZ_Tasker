@@ -15,7 +15,9 @@ $runtimeCacheBustToken = $staticAssetVersion !== '' ? $staticAssetVersion : (str
 $secretKey = env_string('SECRET_KEY', '');
 $secureAuthSecret = env_string('SECURE_AUTH_SECRET', '');
 $userIdSecret = env_string('USER_ID_SECRET', '');
+$userIdPreviousSecrets = parse_csv_values(env_string('USER_ID_PREVIOUS_SECRETS', ''));
 $dataEncryptionKey = env_string('DATA_ENCRYPTION_KEY', '');
+$dataEncryptionPreviousKeys = parse_csv_values(env_string('DATA_ENCRYPTION_PREVIOUS_KEYS', ''));
 $bootstrapAudience = strtolower(env_string('BOOTSTRAP_COOKIE_AUDIENCE', 'tasks.blahpunk.com'));
 $bootstrapMaxAgeSeconds = env_int('BOOTSTRAP_COOKIE_MAX_AGE_SECONDS', 300);
 $bootstrapClockSkewSeconds = env_int('BOOTSTRAP_COOKIE_CLOCK_SKEW_SECONDS', 60);
@@ -23,7 +25,29 @@ $appEnv = strtolower(env_string('APP_ENV', 'production'));
 $authMode = strtolower(env_string('AUTH_MODE', 'oauth'));
 $devUserEmail = env_string('DEV_USER_EMAIL', 'dev@localhost.test');
 
-$decodedDataKey = base64url_decode($dataEncryptionKey);
+$currentDataKeyParts = decode_fernet_key_parts($dataEncryptionKey);
+$fernetKeyring = [];
+if (is_array($currentDataKeyParts)) {
+    $fernetKeyring[] = $currentDataKeyParts;
+}
+foreach ($dataEncryptionPreviousKeys as $i => $k) {
+    $parts = decode_fernet_key_parts($k);
+    if (!is_array($parts)) {
+        server_misconfigured('DATA_ENCRYPTION_PREVIOUS_KEYS contains an invalid key at index ' . (string) $i . '.');
+    }
+
+    $alreadyIncluded = false;
+    foreach ($fernetKeyring as $existing) {
+        if (($existing['signing'] ?? '') === ($parts['signing'] ?? '') &&
+            ($existing['encryption'] ?? '') === ($parts['encryption'] ?? '')) {
+            $alreadyIncluded = true;
+            break;
+        }
+    }
+    if (!$alreadyIncluded) {
+        $fernetKeyring[] = $parts;
+    }
+}
 
 $CONFIG = [
     'base_dir' => $baseDir,
@@ -34,18 +58,21 @@ $CONFIG = [
     'secret_key' => $secretKey,
     'secure_auth_secret' => $secureAuthSecret,
     'user_id_secret' => $userIdSecret,
+    'user_id_previous_secrets' => $userIdPreviousSecrets,
     'data_encryption_key' => $dataEncryptionKey,
+    'data_encryption_previous_keys' => $dataEncryptionPreviousKeys,
     'bootstrap_cookie_audience' => $bootstrapAudience,
     'bootstrap_cookie_max_age_seconds' => $bootstrapMaxAgeSeconds,
     'bootstrap_cookie_clock_skew_seconds' => $bootstrapClockSkewSeconds,
     'app_env' => $appEnv,
     'auth_mode' => $authMode,
     'dev_user_email' => $devUserEmail,
-    'fernet_signing_key' => $decodedDataKey !== null ? substr($decodedDataKey, 0, 16) : '',
-    'fernet_encryption_key' => $decodedDataKey !== null ? substr($decodedDataKey, 16, 16) : '',
+    'fernet_keyring' => $fernetKeyring,
+    'fernet_signing_key' => is_array($currentDataKeyParts) ? (string) ($currentDataKeyParts['signing'] ?? '') : '',
+    'fernet_encryption_key' => is_array($currentDataKeyParts) ? (string) ($currentDataKeyParts['encryption'] ?? '') : '',
 ];
 
-if (!is_string($decodedDataKey) || strlen($decodedDataKey) !== 32) {
+if (!is_array($currentDataKeyParts)) {
     server_misconfigured('DATA_ENCRYPTION_KEY must be a valid 32-byte Fernet key.');
 }
 if ($secretKey === '' || $secretKey === 'change-me') {
@@ -95,6 +122,29 @@ function env_int(string $name, int $default): int
         return $default;
     }
     return (int) $raw;
+}
+
+function parse_csv_values(string $raw): array
+{
+    if (trim($raw) === '') {
+        return [];
+    }
+    $parts = array_map('trim', explode(',', $raw));
+    $parts = array_values(array_filter($parts, static fn(string $s): bool => $s !== ''));
+    return array_values(array_unique($parts));
+}
+
+function decode_fernet_key_parts(string $key): ?array
+{
+    $decoded = base64url_decode(trim($key));
+    if (!is_string($decoded) || strlen($decoded) !== 32) {
+        return null;
+    }
+
+    return [
+        'signing' => substr($decoded, 0, 16),
+        'encryption' => substr($decoded, 16, 16),
+    ];
 }
 
 function load_dotenv(string $path): void
@@ -890,10 +940,38 @@ function legacy_user_storage_id(string $email): string
     return hash('sha256', normalize_email($email));
 }
 
+function user_storage_id_for_secret(string $email, string $secret): string
+{
+    return hash_hmac('sha256', normalize_email($email), $secret);
+}
+
 function user_storage_id(string $email): string
 {
     $secret = (string) cfg('user_id_secret');
-    return hash_hmac('sha256', normalize_email($email), $secret);
+    return user_storage_id_for_secret($email, $secret);
+}
+
+function previous_user_storage_ids(string $email): array
+{
+    $emailNormalized = normalize_email($email);
+    if (!is_valid_email($emailNormalized)) {
+        return [];
+    }
+
+    $secrets = cfg('user_id_previous_secrets');
+    if (!is_array($secrets)) {
+        return [];
+    }
+
+    $ids = [];
+    foreach ($secrets as $secret) {
+        if (!is_string($secret) || trim($secret) === '') {
+            continue;
+        }
+        $ids[] = user_storage_id_for_secret($emailNormalized, trim($secret));
+    }
+
+    return array_values(array_unique($ids));
 }
 
 function current_user_id(): string
@@ -910,39 +988,91 @@ function migrate_user_namespace_if_needed(string $email): void
         return;
     }
 
-    $secureId = user_storage_id($emailNormalized);
+    $newUserId = user_storage_id($emailNormalized);
+    $candidateOldIds = previous_user_storage_ids($emailNormalized);
+
     $legacyId = legacy_user_storage_id($emailNormalized);
-    if ($secureId === $legacyId) {
+    if ($legacyId !== $newUserId) {
+        $candidateOldIds[] = $legacyId;
+    }
+    $candidateOldIds = array_values(array_unique(array_filter(
+        $candidateOldIds,
+        static fn(string $id): bool => $id !== '' && $id !== $newUserId
+    )));
+
+    if (!$candidateOldIds) {
+        return;
+    }
+
+    foreach ($candidateOldIds as $oldUserId) {
+        migrate_single_user_namespace($oldUserId, $newUserId);
+    }
+}
+
+function migrate_single_user_namespace(string $oldUserId, string $newUserId): void
+{
+    if ($oldUserId === '' || $newUserId === '' || $oldUserId === $newUserId) {
         return;
     }
 
     $db = db();
-
-    $stmt = $db->prepare('SELECT COUNT(1) AS c FROM tasks WHERE user_id = ?;');
-    $stmt->execute([$legacyId]);
-    $oldCount = (int) (($stmt->fetch()['c'] ?? 0));
-    if ($oldCount <= 0) {
-        return;
-    }
-
-    $stmt->execute([$secureId]);
-    $newCount = (int) (($stmt->fetch()['c'] ?? 0));
-    if ($newCount > 0) {
+    $hasOld = $db->prepare('SELECT 1 FROM tasks WHERE user_id = ? LIMIT 1;');
+    $hasOld->execute([$oldUserId]);
+    if ($hasOld->fetch() === false) {
         return;
     }
 
     $db->beginTransaction();
     try {
         $updateTasks = $db->prepare('UPDATE tasks SET user_id = ? WHERE user_id = ?;');
-        $updateTags = $db->prepare('UPDATE tags SET user_id = ? WHERE user_id = ?;');
-        $updateTasks->execute([$secureId, $legacyId]);
-        $updateTags->execute([$secureId, $legacyId]);
+        $updateTasks->execute([$newUserId, $oldUserId]);
+
+        merge_tags_user_namespace($db, $oldUserId, $newUserId);
+
         $db->commit();
     } catch (Throwable $e) {
         if ($db->inTransaction()) {
             $db->rollBack();
         }
         throw $e;
+    }
+}
+
+function merge_tags_user_namespace(PDO $db, string $oldUserId, string $newUserId): void
+{
+    $oldTagsStmt = $db->prepare('SELECT id, name FROM tags WHERE user_id = ?;');
+    $oldTagsStmt->execute([$oldUserId]);
+    $oldTags = $oldTagsStmt->fetchAll();
+    if (!$oldTags) {
+        return;
+    }
+
+    $newByNameStmt = $db->prepare('SELECT id FROM tags WHERE user_id = ? AND name = ? LIMIT 1;');
+    $moveTaskTagsStmt = $db->prepare('UPDATE OR IGNORE task_tags SET tag_id = ? WHERE tag_id = ?;');
+    $deleteOldTaskTagRowsStmt = $db->prepare('DELETE FROM task_tags WHERE tag_id = ?;');
+    $deleteTagStmt = $db->prepare('DELETE FROM tags WHERE id = ?;');
+    $moveTagOwnerStmt = $db->prepare('UPDATE tags SET user_id = ? WHERE id = ?;');
+
+    foreach ($oldTags as $tagRow) {
+        $oldTagId = (string) ($tagRow['id'] ?? '');
+        $name = (string) ($tagRow['name'] ?? '');
+        if ($oldTagId === '' || $name === '') {
+            continue;
+        }
+
+        $newByNameStmt->execute([$newUserId, $name]);
+        $newTagRow = $newByNameStmt->fetch();
+        if ($newTagRow && isset($newTagRow['id'])) {
+            $newTagId = (string) $newTagRow['id'];
+            if ($newTagId !== '') {
+                $moveTaskTagsStmt->execute([$newTagId, $oldTagId]);
+            }
+            $deleteOldTaskTagRowsStmt->execute([$oldTagId]);
+            $deleteTagStmt->execute([$oldTagId]);
+            continue;
+        }
+
+        $moveTagOwnerStmt->execute([$newUserId, $oldTagId]);
     }
 }
 
@@ -1773,12 +1903,24 @@ function is_encrypted_value(mixed $value): bool
 
 function encrypt_text(?string $value): string
 {
+    $keyring = fernet_keyring();
+    $active = $keyring[0] ?? null;
+    if (!is_array($active)) {
+        return ENC_PREFIX;
+    }
+
+    $signing = (string) ($active['signing'] ?? '');
+    $encryption = (string) ($active['encryption'] ?? '');
+    if (strlen($signing) !== 16 || strlen($encryption) !== 16) {
+        return ENC_PREFIX;
+    }
+
     $plaintext = $value ?? '';
     $iv = random_bytes(16);
     $ciphertext = openssl_encrypt(
         $plaintext,
         'aes-128-cbc',
-        (string) cfg('fernet_encryption_key'),
+        $encryption,
         OPENSSL_RAW_DATA,
         $iv
     );
@@ -1789,7 +1931,7 @@ function encrypt_text(?string $value): string
 
     $timestamp = pack_uint64_be(time());
     $body = "\x80" . $timestamp . $iv . $ciphertext;
-    $hmac = hash_hmac('sha256', $body, (string) cfg('fernet_signing_key'), true);
+    $hmac = hash_hmac('sha256', $body, $signing, true);
     return ENC_PREFIX . base64url_encode($body . $hmac);
 }
 
@@ -1823,26 +1965,51 @@ function decrypt_text(?string $value): string
         return '';
     }
 
-    $expected = hash_hmac('sha256', $body, (string) cfg('fernet_signing_key'), true);
-    if (!hash_equals($expected, $hmac)) {
-        return '';
+    foreach (fernet_keyring() as $parts) {
+        $signing = (string) ($parts['signing'] ?? '');
+        $encryption = (string) ($parts['encryption'] ?? '');
+        if (strlen($signing) !== 16 || strlen($encryption) !== 16) {
+            continue;
+        }
+
+        $expected = hash_hmac('sha256', $body, $signing, true);
+        if (!hash_equals($expected, $hmac)) {
+            continue;
+        }
+
+        $iv = substr($raw, 9, 16);
+        $ciphertext = substr($raw, 25, -32);
+        if (!is_string($iv) || !is_string($ciphertext)) {
+            return '';
+        }
+
+        $plaintext = openssl_decrypt(
+            $ciphertext,
+            'aes-128-cbc',
+            $encryption,
+            OPENSSL_RAW_DATA,
+            $iv
+        );
+        return is_string($plaintext) ? $plaintext : '';
     }
 
-    $iv = substr($raw, 9, 16);
-    $ciphertext = substr($raw, 25, -32);
-    if (!is_string($iv) || !is_string($ciphertext)) {
-        return '';
+    return '';
+}
+
+function fernet_keyring(): array
+{
+    $ring = cfg('fernet_keyring');
+    if (is_array($ring) && count($ring) > 0) {
+        return $ring;
     }
 
-    $plaintext = openssl_decrypt(
-        $ciphertext,
-        'aes-128-cbc',
-        (string) cfg('fernet_encryption_key'),
-        OPENSSL_RAW_DATA,
-        $iv
-    );
+    $signing = (string) cfg('fernet_signing_key');
+    $encryption = (string) cfg('fernet_encryption_key');
+    if (strlen($signing) === 16 && strlen($encryption) === 16) {
+        return [['signing' => $signing, 'encryption' => $encryption]];
+    }
 
-    return is_string($plaintext) ? $plaintext : '';
+    return [];
 }
 
 function pack_uint64_be(int $value): string
