@@ -68,6 +68,7 @@ Optional:
 - `APP_ENV` (default `production`; supports `development`/`local`/`dev`)
 - `AUTH_MODE` (default `oauth`; use `dev` for clone-and-run local auth)
 - `DEV_USER_EMAIL` (default `dev@localhost.test`; used in `AUTH_MODE=dev`)
+- `SECURE_AUTH_PREVIOUS_SECRETS` (comma-separated fallback secrets during OAuth signing-secret rotation)
 - `USER_ID_PREVIOUS_SECRETS` (comma-separated fallback secrets during `USER_ID_SECRET` rotation)
 - `DATA_ENCRYPTION_PREVIOUS_KEYS` (comma-separated fallback keys during `DATA_ENCRYPTION_KEY` rotation)
 - `DATA_DIR` (default `/var/lib/ez_tasker`)
@@ -111,6 +112,7 @@ DEV_USER_EMAIL=dev@localhost.test
 BOOTSTRAP_COOKIE_MAX_AGE_SECONDS=300
 BOOTSTRAP_COOKIE_CLOCK_SKEW_SECONDS=60
 # Optional:
+# SECURE_AUTH_PREVIOUS_SECRETS=<old-shared-secret-1>,<old-shared-secret-2>
 # USER_ID_PREVIOUS_SECRETS=<old-secret-1>,<old-secret-2>
 # DATA_ENCRYPTION_PREVIOUS_KEYS=<old-key-1>,<old-key-2>
 # DATA_DIR=/var/lib/ez_tasker

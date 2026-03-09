@@ -14,6 +14,7 @@ $runtimeCacheBustToken = $staticAssetVersion !== '' ? $staticAssetVersion : (str
 
 $secretKey = env_string('SECRET_KEY', '');
 $secureAuthSecret = env_string('SECURE_AUTH_SECRET', '');
+$secureAuthPreviousSecrets = parse_csv_values(env_string('SECURE_AUTH_PREVIOUS_SECRETS', ''));
 $userIdSecret = env_string('USER_ID_SECRET', '');
 $userIdPreviousSecrets = parse_csv_values(env_string('USER_ID_PREVIOUS_SECRETS', ''));
 $dataEncryptionKey = env_string('DATA_ENCRYPTION_KEY', '');
@@ -57,6 +58,7 @@ $CONFIG = [
     'runtime_cache_bust_token' => $runtimeCacheBustToken,
     'secret_key' => $secretKey,
     'secure_auth_secret' => $secureAuthSecret,
+    'secure_auth_previous_secrets' => $secureAuthPreviousSecrets,
     'user_id_secret' => $userIdSecret,
     'user_id_previous_secrets' => $userIdPreviousSecrets,
     'data_encryption_key' => $dataEncryptionKey,
@@ -814,13 +816,38 @@ function load_user_from_cookie(): void
 
 function verify_user_cookie_signature(string $userCookie, ?string $userSig): bool
 {
-    $secret = (string) cfg('secure_auth_secret');
-    if ($secret === '' || $userCookie === '' || $userSig === null || $userSig === '') {
+    if ($userCookie === '' || $userSig === null || $userSig === '') {
         return false;
     }
 
-    $expected = hash_hmac('sha256', $userCookie, $secret);
-    return hash_equals($expected, $userSig);
+    $secrets = [];
+    $current = (string) cfg('secure_auth_secret');
+    if ($current !== '') {
+        $secrets[] = $current;
+    }
+
+    $previous = cfg('secure_auth_previous_secrets');
+    if (is_array($previous)) {
+        foreach ($previous as $candidate) {
+            if (is_string($candidate) && trim($candidate) !== '') {
+                $secrets[] = trim($candidate);
+            }
+        }
+    }
+
+    $secrets = array_values(array_unique($secrets));
+    if (!$secrets) {
+        return false;
+    }
+
+    foreach ($secrets as $secret) {
+        $expected = hash_hmac('sha256', $userCookie, $secret);
+        if (hash_equals($expected, $userSig)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function decode_user_cookie(string $userCookie): ?array

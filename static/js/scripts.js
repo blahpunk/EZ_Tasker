@@ -25,6 +25,13 @@ document.addEventListener('DOMContentLoaded', function () {
     const editorContainer = document.getElementById('editor-container');
     const editor = new Quill(editorContainer, { theme: 'snow' });
 
+    function setEditorHtml(html) {
+        editor.setContents([]);
+        if (html && html.trim()) {
+            editor.clipboard.dangerouslyPasteHTML(html);
+        }
+    }
+
     let tasks = [];
     let currentEditingId = null;
     let suppressExpandClick = false;
@@ -125,7 +132,7 @@ document.addEventListener('DOMContentLoaded', function () {
         taskDueDateInput.value = '';
         taskPriorityInput.value = '1';
         taskTagsInput.value = '';
-        editor.setText('');
+        setEditorHtml('');
         currentEditingId = null;
         setFormVisible(false);
         clearDraft();
@@ -152,7 +159,7 @@ document.addEventListener('DOMContentLoaded', function () {
             taskDueDateInput.value = d.due_date || '';
             taskPriorityInput.value = String(d.priority ?? '1');
             taskTagsInput.value = d.tags || '';
-            editor.root.innerHTML = d.description_html || '';
+            setEditorHtml(d.description_html || '');
             return true;
         } catch (_e) {
             return false;
@@ -408,7 +415,7 @@ document.addEventListener('DOMContentLoaded', function () {
         taskDueDateInput.value = task.due_date || '';
         taskPriorityInput.value = String(task.priority ?? 1);
         taskTagsInput.value = Array.isArray(task.tags) ? task.tags.join(', ') : '';
-        editor.root.innerHTML = task.description_html || '';
+        setEditorHtml(task.description_html || '');
 
         saveDraft();
         taskTitleInput.focus();
@@ -495,7 +502,7 @@ document.addEventListener('DOMContentLoaded', function () {
             taskDueDateInput.value = '';
             taskPriorityInput.value = '1';
             taskTagsInput.value = '';
-            editor.setText('');
+            setEditorHtml('');
         }
 
         taskTitleInput.focus();
